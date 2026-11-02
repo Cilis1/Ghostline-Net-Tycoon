@@ -1,14 +1,10 @@
 # Ghostline: Net Tycoon
 
-A cyberpunk browser prototype and a native C++17 game simulation. Build a neighborhood in the forgotten mesh: connect services, grow your audience, and keep corporate Trace below the sweep threshold.
+A native, windowed cyberpunk tycoon game written in C++17 with SDL2. The game opens as a resizable desktop window—there is no browser version. Its graphics use a small built-in pixel font and SDL drawing primitives, so no external art or font assets are required.
 
-## Browser game
+## Build and run
 
-Open `index.html` directly, or serve this folder with any static web server. Browser progress is saved locally. The interface is responsive and designed for mouse and touch.
-
-## Native C++ game
-
-The native playable game uses standard C++17 and has no third-party dependencies:
+Install a C++17 compiler, CMake 3.16+, and SDL2 development libraries, then:
 
 ```sh
 cmake -S . -B build
@@ -16,12 +12,15 @@ cmake --build build
 ./build/ghostline
 ```
 
-Alternatively: `g++ -std=c++17 -O2 src/ghostline.cpp -o ghostline && ./ghostline`.
+On Windows, run `build\\Release\\ghostline.exe` (or the configuration folder used by your generator). SDL2 must be installed and discoverable by CMake. On Debian/Ubuntu, install `libsdl2-dev`; on macOS, install SDL2 with Homebrew; on Windows, SDL2's CMake package or pkg-config must be available.
 
-Commands: `A` to build or upgrade a service, `T` to wait one minute, and `Q` to quit. Build the first service to complete the community contract. Trace rises from conspicuous services; a sweep interrupts risky services temporarily, never destroying progress.
+## Play
 
-## Included in v0.1.0
+Click a node to select it, then click the Build/Upgrade button in the site control panel. Press **T** to advance one minute and collect production. Press **Q** or **Escape** to close the game. Routes unlock as your users grow. Trace from risky services can trigger a temporary corporate sweep, but never destroys progress.
 
-- Six services, three upgrade levels, credits, users, and Trace.
-- Relay boosts, privacy mitigation, contracts, route unlocks, and non-destructive corporate sweeps.
-- Neon cyberpunk map UI plus a terminal-native C++17 edition.
+## Game systems
+
+- Credits, users, and corporate Trace.
+- Six sites/services, three upgrade levels, relay bonuses, privacy mitigation, and a first-service contract.
+- Region route unlocks, corporate warnings, and temporary non-destructive sweeps.
+- Neon map visualization with built-in pixel lettering; no web runtime.

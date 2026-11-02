@@ -1,71 +1,50 @@
+#include <SDL.h>
 #include <algorithm>
 #include <array>
-#include <iomanip>
-#include <iostream>
 #include <string>
 #include <vector>
+#include <cmath>
+#include <iostream>
 
-// Ghostline's game simulation in standard C++17; no third-party engine required.
-struct Service { std::string name, blurb; int cost, credits, users, trace, unlock; };
-struct Site { int service = -1, level = 0; };
-class Game {
-    const std::array<Service, 6> services{{
-        {"Community Forum", "A quiet place for the old Net to talk.", 45, 2, 3, 0, 0},
-        {"Virtual Arcade", "A little joy goes a long way.", 75, 7, 1, 0, 0},
-        {"Mirror Archive", "Keep forgotten knowledge alive.", 110, 1, 4, 0, 50},
-        {"Relay Hub", "Boost nearby services by ten percent.", 130, 0, 0, 0, 50},
-        {"Privacy Vault", "Scrub two Trace per minute.", 160, 0, 0, -2, 100},
-        {"Stream Den", "Big returns, but hard to hide.", 190, 12, 2, 2, 100}
-    }};
-    std::array<Site, 6> sites{};
-    double credits = 130, users = 0, trace = 0;
-    int minute = 0;
+struct Service { const char* name; const char* shortName; int cost, credits, users, trace, unlock; SDL_Color color; };
+struct Site { int service=-1, level=0; SDL_Point pos{}; };
+static const std::array<Service,6> SERVICES{{
+ {"Community Forum","FORUM",45,2,3,0,0,{68,246,232,255}},
+ {"Virtual Arcade","ARCADE",75,7,1,0,0,{255,63,210,255}},
+ {"Mirror Archive","ARCHIVE",110,1,4,0,50,{255,198,90,255}},
+ {"Relay Hub","RELAY",130,0,0,0,50,{164,134,255,255}},
+ {"Privacy Vault","VAULT",160,0,0,-2,100,{72,246,232,255}},
+ {"Stream Den","STREAM",190,12,2,2,100,{255,93,170,255}}
+}};
+// Tiny built-in 5x7 font keeps the game self-contained (no external fonts/assets).
+static const char* glyph(char c){switch(c){
+case 'A':return "01110100011000111111100011000110001";case 'B':return "11110100011000111110100011000111110";case 'C':return "01111100001000010000100001000001111";case 'D':return "11110100011000110001100011000111110";case 'E':return "11111100001000011110100001000011111";case 'F':return "11111100001000011110100001000010000";case 'G':return "01111100001000010111100011000101110";case 'H':return "10001100011000111111100011000110001";case 'I':return "11111001000010000100001000010011111";case 'J':return "00111000100001000010000101001001100";case 'K':return "10001100101010011000101001001010001";case 'L':return "10000100001000010000100001000011111";case 'M':return "10001110111010110101100011000110001";case 'N':return "10001110011010110011100011000110001";case 'O':return "01110100011000110001100011000101110";case 'P':return "11110100011000111110100001000010000";case 'Q':return "01110100011000110001101011001001101";case 'R':return "11110100011000111110101001001010001";case 'S':return "01111100001000001110000010000111110";case 'T':return "11111001000010000100001000010000100";case 'U':return "10001100011000110001100011000101110";case 'V':return "10001100011000110001100010101000100";case 'W':return "10001100011000110101101011101110001";case 'X':return "10001100010101000100010101000110001";case 'Y':return "10001100010101000100001000010000100";case 'Z':return "11111000010001000100010001000011111";
+case '0':return "01110100011001110101110011000101110";case '1':return "00100011000010000100001000010001110";case '2':return "01110100010000100010001000100011111";case '3':return "11110000010000101110000010000111110";case '4':return "00010001100101010010111110001000010";case '5':return "11111100001000011110000010000111110";case '6':return "01110100001000011110100011000101110";case '7':return "11111000010001000100010000100001000";case '8':return "01110100011000101110100011000101110";case '9':return "01110100011000101111000010000101110";case '+':return "00000001000010011111001000010000000";case '-':return "00000000000000011111000000000000000";case '/':return "00001000100001000100010001000010000";case ':':return "00000001000010000000001000010000000";case '.':return "00000000000000000000000000011000110";case '!':return "00100001000010000100001000000000100";default:return "00000000000000000000000000000000000";}}
+class Ghostline {
+ SDL_Window* window=nullptr; SDL_Renderer* renderer=nullptr; bool running=true; int selected=-1; double credits=130,users=0,trace=0; int minute=0; bool contracted=false; std::array<Site,7> sites{{{-1,0,{380,350}},{-1,0,{250,240}},{-1,0,{500,240}},{-1,0,{550,350}},{-1,0,{500,460}},{-1,0,{250,460}},{-1,0,{160,350}}}};
+ int width=1040,height=700;
+ void color(SDL_Color c){SDL_SetRenderDrawColor(renderer,c.r,c.g,c.b,c.a);} void fill(int x,int y,int w,int h,SDL_Color c){color(c);SDL_Rect r{x,y,w,h};SDL_RenderFillRect(renderer,&r);} void outline(int x,int y,int w,int h,SDL_Color c){color(c);SDL_Rect r{x,y,w,h};SDL_RenderDrawRect(renderer,&r);}
+ void text(std::string s,int x,int y,int scale,SDL_Color c){color(c);for(char ch:s){if(ch==' '){x+=6*scale;continue;}auto bits=glyph(ch);for(int i=0;i<35;i++)if(bits[i]=='1'){SDL_Rect r{x+(i%5)*scale,y+(i/5)*scale,scale,scale};SDL_RenderFillRect(renderer,&r);}x+=6*scale;} }
+ double income()const{double r=0;for(auto a:sites)if(a.service>=0)r+=SERVICES[a.service].credits*(1+.5*(a.level-1));if(sites[4].service>=0)r*=1.1;return r;}double growth()const{double r=0;for(auto a:sites)if(a.service>=0)r+=SERVICES[a.service].users*(1+.5*(a.level-1));if(sites[4].service>=0)r*=1.1;return r;}double risk()const{double r=0;for(auto a:sites)if(a.service>=0)r+=SERVICES[a.service].trace;return r;}
+ void line(int x1,int y1,int x2,int y2,SDL_Color c){color(c);SDL_RenderDrawLine(renderer,x1,y1,x2,y2);}
+ void draw(){SDL_SetRenderDrawColor(renderer,7,7,18,255);SDL_RenderClear(renderer); // neon grid
+ for(int x=0;x<width;x+=32) line(x,90,x,height-38,{35,25,59,255});
+ for(int y=90;y<height-38;y+=32) line(0,y,width,y,{35,25,59,255});
+ fill(18,16,width-36,60,{15,12,31,255});outline(18,16,width-36,60,{94,41,113,255});text("GHOSTLINE / INDEPENDENT NETWORK",36,35,2,{255,63,210,255});text("CREDITS",570,28,1,{166,146,185,255});text(std::to_string((int)credits),570,45,2,{255,198,90,255});text("USERS",700,28,1,{166,146,185,255});text(std::to_string((int)users),700,45,2,{72,246,232,255});text("TRACE",810,28,1,{166,146,185,255});text(std::to_string((int)trace)+"/100",810,45,2,trace>=60?SDL_Color{255,63,210,255}:SDL_Color{255,255,255,255});
+ text("ABANDONED MESH   /   NODE 01",32,100,2,{174,136,211,255});text("CLICK A SITE TO SELECT",width-300,104,1,{126,112,145,255});
+ // network links
+ for(int i=1;i<7;i++){auto p=sites[i].pos;line(sites[0].pos.x,sites[0].pos.y,p.x,p.y,sites[i].service>=0?SDL_Color{72,246,232,190}:SDL_Color{66,45,82,255});}
+ for(int i=0;i<7;i++){auto p=sites[i].pos;bool core=i==0,built=sites[i].service>=0;int rad=core?32:24;SDL_Color c=core?SDL_Color{255,63,210,255}:built?SERVICES[sites[i].service].color:SDL_Color{97,75,119,255};color(c);SDL_Rect r{p.x-rad,p.y-rad,rad*2,rad*2};SDL_RenderDrawRect(renderer,&r);outline(p.x-rad-4,p.y-rad-4,rad*2+8,rad*2+8,(i==selected)?SDL_Color{255,255,255,255}:SDL_Color{65,47,86,255});fill(p.x-4,p.y-4,8,8,c);if(core)text("G",p.x-5,p.y-5,2,{255,255,255,255});else{text(SERVICES[i-1].shortName,p.x-32,p.y+34,1,c);if(built)text("LVL "+std::to_string(sites[i].level),p.x-16,p.y+44,1,{215,202,226,255});else if(users<SERVICES[i-1].unlock)text("LOCKED",p.x-19,p.y+44,1,{123,101,130,255});else text("OPEN",p.x-12,p.y+44,1,{72,246,232,255});}}
+ fill(20,height-100,width-40,64,{14,12,29,255});outline(20,height-100,width-40,64,{75,42,91,255});text("NET YIELD",36,height-84,1,{166,146,185,255});text("+"+std::to_string((int)income())+" CREDITS/MIN",36,height-65,2,{72,246,232,255});text("+"+std::to_string((int)growth())+" USERS/MIN",290,height-65,2,{72,246,232,255});text("[T] WAIT 1 MINUTE",width-360,height-80,1,{255,198,90,255});text("[ESC] QUIT",width-360,height-62,1,{255,63,210,255});
+ fill(width-270,130,246,330,{15,12,31,255});outline(width-270,130,246,330,{94,41,113,255});text("SITE CONTROL",width-250,150,2,{255,63,210,255});if(selected<0)text("SELECT A NODE",width-250,190,1,{164,143,178,255});else if(selected==0) {text("GHOSTLINE CORE",width-250,190,1,{72,246,232,255});text("ROOT NODE / ONLINE",width-250,215,1,{165,145,181,255});}
+ else {auto& a=sites[selected];auto& s=SERVICES[selected-1];text(s.shortName,width-250,190,2,s.color);if(a.service>=0){text("LEVEL "+std::to_string(a.level)+" ONLINE",width-250,218,1,{72,246,232,255});text("+"+std::to_string(s.credits)+" CREDITS/MIN",width-250,244,1,{230,215,241,255});text("+"+std::to_string(s.users)+" USERS/MIN",width-250,262,1,{230,215,241,255});text("TRACE "+std::to_string(s.trace)+" / MIN",width-250,280,1,{255,112,199,255});int cost=(int)(s.cost*(1+.72*a.level));fill(width-250,310,204,40,credits>=cost&&a.level<3?SDL_Color{255,63,210,255}:SDL_Color{65,47,75,255});text(a.level>=3?"MAX LEVEL":"UPGRADE "+std::to_string(cost),width-236,326,1,{255,255,255,255});}else{int unlock=s.unlock; text("COST "+std::to_string(s.cost)+" CREDITS",width-250,220,1,{255,198,90,255});if(users<unlock)text("NEED "+std::to_string(unlock)+" USERS",width-250,246,1,{255,112,199,255});fill(width-250,280,204,42,users>=unlock&&credits>=s.cost?SDL_Color{255,63,210,255}:SDL_Color{65,47,75,255});text(users<unlock?"ROUTE LOCKED":"BUILD SERVICE",width-237,296,1,{255,255,255,255});}}
+ if(trace>=60)text("CORPORATE SCAN DETECTED - BUILD A VAULT",width-270,490,1,{255,87,190,255});else text("CONTRACT: BUILD ONE SERVICE FOR +60 CREDITS",width-270,490,1,{255,198,90,255});if(users>=100)text("NEON COMMONS ROUTE UNLOCKED",width-270,516,1,{72,246,232,255});
+ fill(0,height-24,width,24,{18,11,28,255});text("GHOSTLINE   //   THE NET IS STILL OURS",22,height-17,1,{122,101,145,255});SDL_RenderPresent(renderer);}
+ void tick(){credits+=income();users+=growth();trace=std::clamp(trace+risk(),0.0,100.0);++minute;if(trace>=100){for(auto& s:sites)if(s.service==5){s.service=-1;s.level=0;break;}trace=55;}}
+ void click(int x,int y){for(int i=0;i<7;i++){auto p=sites[i].pos;if(std::abs(x-p.x)<38&&std::abs(y-p.y)<42){selected=i;return;}}if(selected>0&&x>=width-255&&x<=width-45&&y>=275&&y<=360){auto& site=sites[selected];auto& s=SERVICES[selected-1];if(site.service>=0){int cost=(int)(s.cost*(1+.72*site.level));if(site.level<3&&credits>=cost){credits-=cost;++site.level;}}else if(users>=s.unlock&&credits>=s.cost){credits-=s.cost;site={selected-1,1};if(!contracted){credits+=60;contracted=true;}}}}
 public:
-    void status() const {
-        double income = 0, growth = 0, risk = 0;
-        for (const auto& site : sites) if (site.service >= 0) {
-            const auto& s = services[site.service]; const double mult = 1 + .5 * (site.level - 1);
-            income += s.credits * mult; growth += s.users * mult; risk += s.trace;
-        }
-        if (sites[3].service >= 0) { income *= 1.1; growth *= 1.1; }
-        std::cout << "\n\033[95m╔════════════════ G H O S T L I N E ════════════════╗\033[0m\n"
-                  << "  ¢ " << static_cast<int>(credits) << "   USERS " << static_cast<int>(users)
-                  << "   TRACE " << static_cast<int>(trace) << "/100   [";
-        int filled = std::clamp(static_cast<int>(trace / 10), 0, 10);
-        for (int i=0;i<10;++i) std::cout << (i<filled ? "■" : "·");
-        std::cout << "]\n  MESH / ABANDONED MESH     NET YIELD +" << income << "¢ / MIN · +" << growth << " USERS / MIN\n"
-                  << "\033[95m╚═══════════════════════════════════════════════════╝\033[0m\n";
-        for (int i=0;i<6;++i) {
-            std::cout << "  " << i+1 << ". ";
-            if (sites[i].service >= 0) std::cout << "\033[96m" << services[i].name << " · LEVEL " << sites[i].level << " ONLINE\033[0m";
-            else if (users < services[i].unlock) std::cout << "[LOCKED] " << services[i].name << " — requires " << services[i].unlock << " users";
-            else std::cout << "[OPEN]   " << services[i].name << " — " << services[i].cost << " credits";
-            std::cout << '\n';
-        }
-        if (trace >= 60) std::cout << "\033[91m  !! CORPORATE SCAN DETECTED — reduce Trace with a Privacy Vault.\033[0m\n";
-        if (trace >= 80) std::cout << "  Sweep imminent. At 100 Trace, a risky service goes offline briefly.\n";
-        std::cout << "  CONTRACT: Build a service · reward +60 credits\n";
-    }
-    void run() {
-        std::cout << "\033[96mGhostline: Net Tycoon — C++17 edition\033[0m\nA forgotten corner of cyberspace is yours. Build a network they can't own.\n";
-        bool contracted = false;
-        for (;;) {
-            status(); std::cout << "\n[A] Build/upgrade  [T] Wait one minute  [Q] Quit\n> ";
-            std::string cmd; if (!(std::cin >> cmd)) break;
-            if (cmd == "q" || cmd == "Q") break;
-            if (cmd == "t" || cmd == "T") {
-                double income=0,growth=0,risk=0;
-                for (auto site:sites) if(site.service>=0){auto s=services[site.service];double m=1+.5*(site.level-1);income+=s.credits*m;growth+=s.users*m;risk+=s.trace;}
-                if(sites[3].service>=0){income*=1.1;growth*=1.1;} credits+=income;users+=growth;trace=std::max(0.0,trace+risk);++minute;
-                if(trace>=100){for(auto& site:sites)if(site.service==5){site.service=-1;site.level=0;break;}trace=55;std::cout<<"\033[91mCorporate sweep! A risky service was temporarily interrupted; the network survives.\033[0m\n";}
-                if(users>=100)std::cout<<"\033[96mNeon Commons route unlocked!\033[0m\n";
-            } else if(cmd=="a"||cmd=="A") {
-                std::cout << "Site number (1-6): ";int n;std::cin>>n;if(n<1||n>6)continue;auto& site=sites[n-1];
-                if(site.service>=0){auto& s=services[site.service];int price=static_cast<int>(s.cost*(1+.72*site.level));if(site.level>=3)std::cout<<"Already at maximum level.\n";else if(credits<price)std::cout<<"Not enough credits.\n";else{credits-=price;++site.level;std::cout<<s.name<<" upgraded.\n";}}
-                else {auto& s=services[n-1];if(users<s.unlock)std::cout<<"Route locked. Grow your audience first.\n";else if(credits<s.cost)std::cout<<"Not enough credits.\n";else{credits-=s.cost;site={n-1,1};std::cout<<s.name<<" is online.\n";if(!contracted){credits+=60;contracted=true;std::cout<<"Contract complete: +60 credits.\n";}}}
-            }
-        }
-        std::cout << "\nSession ended. Your network is still out there.\n";
-    }
+ bool init(){if(SDL_Init(SDL_INIT_VIDEO|SDL_INIT_TIMER)!=0){std::cerr<<"SDL init failed: "<<SDL_GetError()<<"\n";return false;}window=SDL_CreateWindow("Ghostline: Net Tycoon",SDL_WINDOWPOS_CENTERED,SDL_WINDOWPOS_CENTERED,width,height,SDL_WINDOW_SHOWN|SDL_WINDOW_RESIZABLE);if(!window){std::cerr<<SDL_GetError()<<"\n";return false;}renderer=SDL_CreateRenderer(window,-1,SDL_RENDERER_ACCELERATED|SDL_RENDERER_PRESENTVSYNC);if(!renderer)renderer=SDL_CreateRenderer(window,-1,SDL_RENDERER_SOFTWARE);return renderer!=nullptr;}
+ void run(){Uint32 last=SDL_GetTicks();while(running){SDL_Event e;while(SDL_PollEvent(&e)){if(e.type==SDL_QUIT)running=false;else if(e.type==SDL_WINDOWEVENT&&e.window.event==SDL_WINDOWEVENT_SIZE_CHANGED){width=e.window.data1;height=e.window.data2;for(int i=0;i<7;i++){sites[i].pos.x=width/2+(i==1||i==3?-125:i==2||i==4?125:i==5?250:0);sites[i].pos.y=height/2+(i==1||i==2?-85:i==3||i==4?90:0);}}else if(e.type==SDL_MOUSEBUTTONDOWN)click(e.button.x,e.button.y);else if(e.type==SDL_KEYDOWN){if(e.key.keysym.sym==SDLK_ESCAPE||e.key.keysym.sym==SDLK_q)running=false;if(e.key.keysym.sym==SDLK_t)tick();if((e.key.keysym.sym==SDLK_RETURN||e.key.keysym.sym==SDLK_SPACE)&&selected>0)click(width-150,330);}}if(SDL_GetTicks()-last>=1000){last=SDL_GetTicks();draw();}SDL_Delay(8);} }
+ ~Ghostline(){if(renderer)SDL_DestroyRenderer(renderer);if(window)SDL_DestroyWindow(window);SDL_Quit();}
 };
-int main(){Game game;game.run();}
+int main(){Ghostline game;if(!game.init())return 1;game.run();}
