@@ -1,0 +1,61 @@
+name: Build Windows installer and game
+
+on:
+  push:
+    tags:
+      - 'v*'
+  release:
+    types: [published]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  windows-release:
+    runs-on: windows-latest
+    steps:
+      - name: Check out tagged source
+        uses: actions/checkout@v4
+
+      - name: Install SDL2
+        run: vcpkg install sdl2:x64-windows-static
+
+      - name: Build windowed game
+        run: >-
+          cmake -S . -B build
+          -DCMAKE_TOOLCHAIN_FILE="$env:VCPKG_INSTALLATION_ROOT/scripts/buildsystems/vcpkg.cmake"
+          -DVCPKG_TARGET_TRIPLET=x64-windows-static
+          -DCMAKE_MSVC_RUNTIME_LIBRARY=MultiThreaded
+          -DCMAKE_BUILD_TYPE=Release
+
+      - name: Compile game
+        run: cmake --build build --config Release --parallel
+
+      - name: Stage Windows game package
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path package | Out-Null
+          Copy-Item build/Release/ghostline.exe package/
+          if (Test-Path build/Release/SDL2.dll) { Copy-Item build/Release/SDL2.dll package/ }
+          if (Test-Path build/bin/SDL2.dll) { Copy-Item build/bin/SDL2.dll package/ }
+          if (-not (Test-Path package/ghostline.exe)) { throw 'Game executable was not produced.' }
+          Compress-Archive -Path package/* -DestinationPath Ghostline-Windows-x64.zip -Force
+
+      - name: Compile self-installing bootstrap executable
+        shell: cmd
+        run: >-
+          cl /nologo /O2 /EHsc /std:c++17 /DUNICODE /D_UNICODE
+          installer\windows_installer.cpp
+          /link /SUBSYSTEM:WINDOWS urlmon.lib shell32.lib ole32.lib
+          /OUT:Ghostline-Installer.exe
+
+      - name: Upload installer and Windows game bundle to this release
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            Ghostline-Installer.exe
+            Ghostline-Windows-x64.zip
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
