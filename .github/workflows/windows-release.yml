@@ -39,6 +39,9 @@ jobs:
           if (-not (Test-Path package/ghostline.exe)) { throw 'Game executable was not produced.' }
           Compress-Archive -Path package/* -DestinationPath Ghostline-Windows-x64.zip -Force
 
+      - name: Set up Visual C++ compiler environment
+        uses: ilammy/msvc-dev-cmd@v1
+
       - name: Compile self-installing bootstrap executable
         shell: cmd
         run: >-
