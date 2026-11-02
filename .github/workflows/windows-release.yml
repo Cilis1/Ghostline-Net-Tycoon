@@ -18,7 +18,7 @@ jobs:
       - name: Install SDL2
         run: vcpkg install sdl2:x64-windows-static
 
-      - name: Build windowed game
+      - name: Configure game and installer
         run: >-
           cmake -S . -B build
           -DCMAKE_TOOLCHAIN_FILE="$env:VCPKG_INSTALLATION_ROOT/scripts/buildsystems/vcpkg.cmake"
@@ -26,10 +26,10 @@ jobs:
           -DCMAKE_MSVC_RUNTIME_LIBRARY=MultiThreaded
           -DCMAKE_BUILD_TYPE=Release
 
-      - name: Compile game
+      - name: Compile game and installer
         run: cmake --build build --config Release --parallel --verbose
 
-      - name: Stage Windows game package
+      - name: Stage Windows package
         shell: pwsh
         run: |
           New-Item -ItemType Directory -Force -Path package | Out-Null
@@ -37,18 +37,9 @@ jobs:
           if (Test-Path build/Release/SDL2.dll) { Copy-Item build/Release/SDL2.dll package/ }
           if (Test-Path build/bin/SDL2.dll) { Copy-Item build/bin/SDL2.dll package/ }
           if (-not (Test-Path package/ghostline.exe)) { throw 'Game executable was not produced.' }
+          if (-not (Test-Path build/Release/Ghostline-Installer.exe)) { throw 'Installer executable was not produced.' }
+          Copy-Item build/Release/Ghostline-Installer.exe .
           Compress-Archive -Path package/* -DestinationPath Ghostline-Windows-x64.zip -Force
-
-      - name: Set up Visual C++ compiler environment
-        uses: ilammy/msvc-dev-cmd@v1
-
-      - name: Compile self-installing bootstrap executable
-        shell: cmd
-        run: >-
-          cl /nologo /O2 /EHsc /std:c++17 /DUNICODE /D_UNICODE
-          installer\windows_installer.cpp
-          /link /SUBSYSTEM:WINDOWS urlmon.lib shell32.lib ole32.lib
-          /OUT:Ghostline-Installer.exe
 
       - name: Upload installer and Windows game bundle to this release
         if: startsWith(github.ref, 'refs/tags/')
